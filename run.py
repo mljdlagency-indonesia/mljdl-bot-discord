@@ -5,8 +5,11 @@ Usage: python run.py
 import asyncio
 import logging
 import os
+import socket
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+import aiohttp
 
 from bot.main import MyBot
 from bot.config import config
@@ -35,7 +38,12 @@ async def main() -> None:
     # Start health check server in background (for HF Spaces)
     threading.Thread(target=start_health_server, daemon=True).start()
 
+    # Force Google DNS via custom resolver (HF Spaces DNS fix)
+    resolver = aiohttp.resolver.AsyncResolver(nameservers=["8.8.8.8", "8.8.4.4"])
+    connector = aiohttp.TCPConnector(resolver=resolver)
+
     bot = MyBot()
+    bot.http.connector = connector
 
     # Retry connection up to 5 times (HF Spaces network might not be ready)
     max_retries = 5

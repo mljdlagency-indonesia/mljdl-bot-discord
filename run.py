@@ -3,12 +3,15 @@ run.py -- Entry point untuk menjalankan bot
 Usage: python run.py
 """
 import asyncio
+import logging
 import os
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from bot.main import MyBot
 from bot.config import config
+
+log = logging.getLogger("bot")
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -33,8 +36,22 @@ async def main() -> None:
     threading.Thread(target=start_health_server, daemon=True).start()
 
     bot = MyBot()
-    async with bot:
-        await bot.start(config.DISCORD_TOKEN)
+
+    # Retry connection up to 5 times (HF Spaces network might not be ready)
+    max_retries = 5
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with bot:
+                await bot.start(config.DISCORD_TOKEN)
+        except Exception as e:
+            if attempt < max_retries:
+                wait = attempt * 5
+                log.warning(f"Connection failed (attempt {attempt}/{max_retries}): {e}")
+                log.warning(f"Retrying in {wait}s...")
+                await asyncio.sleep(wait)
+            else:
+                log.error(f"Failed after {max_retries} attempts: {e}")
+                raise
 
 
 if __name__ == "__main__":

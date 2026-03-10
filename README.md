@@ -1,3 +1,12 @@
+---
+title: MLJDL Bot Discord
+emoji: 🤖
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # Discord Bot — Sheets + GitHub + Task Manager
 
 Bot modular Discord dengan fitur:

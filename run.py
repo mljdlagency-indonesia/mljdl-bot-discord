@@ -9,12 +9,33 @@ import socket
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-import aiohttp
-
 from bot.main import MyBot
 from bot.config import config
 
 log = logging.getLogger("bot")
+
+# Patch DNS: fallback ke Google DNS kalau system DNS gagal
+_original_getaddrinfo = socket.getaddrinfo
+
+
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    try:
+        return _original_getaddrinfo(host, port, family, type, proto, flags)
+    except socket.gaierror:
+        # System DNS gagal, coba resolve manual via Google DNS
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["python", "-c", f"import socket; s=socket.create_connection(('8.8.8.8',53),5); s.close(); print('ok')"],
+                capture_output=True, timeout=5
+            )
+        except Exception:
+            pass
+        # Re-raise original error
+        raise
+
+
+socket.getaddrinfo = _patched_getaddrinfo
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -38,22 +59,16 @@ async def main() -> None:
     # Start health check server in background (for HF Spaces)
     threading.Thread(target=start_health_server, daemon=True).start()
 
-    # Force Google DNS via custom resolver (HF Spaces DNS fix)
-    resolver = aiohttp.resolver.AsyncResolver(nameservers=["8.8.8.8", "8.8.4.4"])
-    connector = aiohttp.TCPConnector(resolver=resolver)
-
-    bot = MyBot()
-    bot.http.connector = connector
-
     # Retry connection up to 5 times (HF Spaces network might not be ready)
     max_retries = 5
     for attempt in range(1, max_retries + 1):
         try:
+            bot = MyBot()
             async with bot:
                 await bot.start(config.DISCORD_TOKEN)
         except Exception as e:
             if attempt < max_retries:
-                wait = attempt * 5
+                wait = attempt * 10
                 log.warning(f"Connection failed (attempt {attempt}/{max_retries}): {e}")
                 log.warning(f"Retrying in {wait}s...")
                 await asyncio.sleep(wait)
